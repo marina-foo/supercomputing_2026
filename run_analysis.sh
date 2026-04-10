@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=project_2018026
 #SBATCH --job-name=super_analysis
-#SBATCH --output=super_analysis.out
+#SBATCH --output=/scratch/project_2018026/lojarvin/super_analysis_%j.out
 #SBATCH --time=00:05:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
