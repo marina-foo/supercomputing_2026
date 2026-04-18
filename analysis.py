@@ -2,20 +2,14 @@ import os
 import sys
 import time
 import numpy as np
-from multiprocessing import Pool, cpu_count
+from mpi4py import MPI
 
-# Data paths
-PUHTI_DATA_DIR = "/projappl/project_2018026/super_data"
+PUHTI_DATA_DIR = "/scratch/project_2018026/lojarvin/super_data"
 LOCAL_DATA_DIR = "/Users/marina/Desktop/school/super_computing/super_data"
 
-# This is used to achieve 60 seconds runtime for the analysis (basline, no multiprocessing)
 REPEAT = 450
 
 def heavy_compute(path):
-    """
-    Load a .npy file and perform repeated numerical computation
-    to generate CPU-bound workload.
-    """
     arr = np.load(path)
     result = 0.0
     for _ in range(REPEAT):
@@ -23,7 +17,6 @@ def heavy_compute(path):
     return result
 
 def main():
-    # Select environment
     if len(sys.argv) > 1 and sys.argv[1].upper() == "LOCAL":
         data_dir = LOCAL_DATA_DIR
         environment = "LOCAL"
@@ -31,33 +24,41 @@ def main():
         data_dir = PUHTI_DATA_DIR
         environment = "PUHTI"
 
-    print(f"Running analysis in {environment} environment")
-    print(f"Using data directory: {data_dir}")
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
 
-    # List all .npy files
-    files = [
-        os.path.join(data_dir, f)
-        for f in os.listdir(data_dir)
-        if f.endswith(".npy")
-    ]
+    if rank == 0:
+        print(f"Running analysis in {environment} environment")
+        print(f"Using data directory: {data_dir}")
 
-    if not files:
-        raise RuntimeError("No .npy files found!")
+    if rank == 0:
+        files = [
+            os.path.join(data_dir, f)
+            for f in os.listdir(data_dir)
+            if f.endswith(".npy")
+        ]
+    else:
+        files = None
 
-    nproc = cpu_count()
-    print(f"Using multiprocessing with {nproc} processes")
+    files = comm.bcast(files, root=0)
+    local_files = files[rank::size]
+
+    print(f"Rank {rank} processed {len(local_files)} files")
 
     start = time.time()
 
-    with Pool(processes=nproc) as pool:
-        results = pool.map(heavy_compute, files)
+    local_sum = 0.0
+    for path in local_files:
+        local_sum += heavy_compute(path)
 
-    total = sum(results)
-    elapsed = time.time() - start
+    total = comm.reduce(local_sum, op=MPI.SUM, root=0)
 
-    print(f"Files processed: {len(files)}")
-    print(f"Total result: {total}")
-    print(f"Elapsed time: {elapsed:.2f} seconds")
+    if rank == 0:
+        elapsed = time.time() - start
+        print(f"Files processed: {len(files)}")
+        print(f"Total result: {total}")
+        print(f"Elapsed time: {elapsed:.2f} seconds")
 
 if __name__ == "__main__":
     main()
